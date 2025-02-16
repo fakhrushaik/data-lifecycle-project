@@ -1,0 +1,107 @@
+# Use version 3.8 of the Docker Compose file format
+version: '3.8'
+
+services:
+  # PostgreSQL database service
+  postgres:
+    image: postgres:13  # Use the official PostgreSQL image, version 13
+    environment:
+      POSTGRES_USER: airflow  # Set the PostgreSQL username to 'airflow'
+      POSTGRES_PASSWORD: airflow  # Set the PostgreSQL password to 'airflow'
+      POSTGRES_DB: airflow  # Create a PostgreSQL database named 'airflow'
+    volumes:
+      - postgres-db-volume:/var/lib/postgresql/data  # Persist PostgreSQL data in a Docker volume
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]  # Check if PostgreSQL is ready to accept connections
+      interval: 5s  # Time between health checks
+      retries: 5  # Number of retries before considering the service as unhealthy
+    restart: always  # Always restart the container if it stops
+
+  # pgAdmin service for managing PostgreSQL through a web interface
+  pgadmin:
+    image: dpage/pgadmin4  # Use the official pgAdmin 4 image
+    container_name: pgadmin  # Name the container 'pgadmin'
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@example.com  # Default email for pgAdmin login (change as needed)
+      PGADMIN_DEFAULT_PASSWORD: admin  # Default password for pgAdmin login (change to a strong password)
+    ports:
+      - "5050:80"  # Map port 80 in the container to port 5050 on the host
+    depends_on:
+      postgres:
+        condition: service_healthy  # Wait for PostgreSQL to be healthy before starting pgAdmin
+    restart: always  # Always restart the container if it stops
+
+  # Airflow webserver service
+  webserver:
+    build: .  # Build the Docker image using the Dockerfile in the current directory
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor  # Configure Airflow to use the LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow  # Database connection string
+      #AIRFLOW__CORE__FERNET_KEY: 'YOUR_GENERATED_FERNET_KEY'  # Replace with your generated Fernet key for encryption
+      AIRFLOW__CORE__LOAD_EXAMPLES: 'true'  # Load example DAGs (set to 'false' in production)
+      AIRFLOW__WEBSERVER__RBAC: 'true'  # Enable Role-Based Access Control in the webserver
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags  # Mount local 'dags' directory to the container
+      - ./logs:/opt/airflow/logs  # Mount local 'logs' directory to the container
+      - ./plugins:/opt/airflow/plugins  # Mount local 'plugins' directory to the container
+    ports:
+      - "8080:8080"  # Map port 8080 in the container to port 8080 on the host
+    depends_on:
+      postgres:
+        condition: service_healthy  # Wait for PostgreSQL to be healthy before starting the webserver
+    command: ["webserver"]  # Command to start the Airflow webserver
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]  # Check if the webserver is responding
+      interval: 10s  # Time between health checks
+      timeout: 10s  # Time to wait for a health check to succeed
+      retries: 5  # Number of retries before considering the service as unhealthy
+    restart: always  # Always restart the container if it stops
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'  # Limit the webserver to 0.5 CPU
+          memory: '512M'  # Limit the webserver to 512MB of memory
+
+  # Airflow scheduler service
+  scheduler:
+    build: .  # Build the Docker image using the Dockerfile in the current directory
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor  # Configure Airflow to use the LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow  # Database connection string
+      #AIRFLOW__CORE__FERNET_KEY: 'YOUR_GENERATED_FERNET_KEY'  # Replace with your generated Fernet key for encryption
+      AIRFLOW__CORE__LOAD_EXAMPLES: 'true'  # Load example DAGs (set to 'false' in production)
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags  # Mount local 'dags' directory to the container
+      - ./logs:/opt/airflow/logs  # Mount local 'logs' directory to the container
+      - ./plugins:/opt/airflow/plugins  # Mount local 'plugins' directory to the container
+    depends_on:
+      postgres:
+        condition: service_healthy  # Wait for PostgreSQL to be healthy before starting the scheduler
+    command: ["scheduler"]  # Command to start the Airflow scheduler
+    restart: always  # Always restart the container if it stops
+
+  # Service to initialize Airflow
+  airflow-init:
+    build: .  # Build the Docker image using the Dockerfile in the current directory
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor  # Configure Airflow to use the LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow  # Database connection string
+      #AIRFLOW__CORE__FERNET_KEY: 'YOUR_GENERATED_FERNET_KEY'  # Replace with your generated Fernet key for encryption
+      AIRFLOW__CORE__LOAD_EXAMPLES: 'true'  # Load example DAGs (set to 'false' in production)
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags  # Mount local 'dags' directory to the container
+      - ./logs:/opt/airflow/logs  # Mount local 'logs' directory to the container
+      - ./plugins:/opt/airflow/plugins  # Mount local 'plugins' directory to the container
+    entrypoint: >
+      /bin/bash -c "sleep 10 && airflow db init && airflow users create --username newadmin --firstname Fakhruddin --lastname Shaik --role Admin --email shaikfn@mail.uc.edu --password Fakhru@2021"  # Initialize the Airflow database and create an admin user
+    depends_on:
+      postgres:
+        condition: service_healthy  # Wait for PostgreSQL to be healthy before initializing Airflow
+    restart: on-failure  # Restart the container only if it fails
+
+# Define named volumes to persist data
+volumes:
+  postgres-db-volume:
+  airflow-logs:
+  airflow-dags:
+  airflow-plugins:
