@@ -1,5 +1,3 @@
-# DataTechAdminWorkSpace
-
 # Data Lifecycle Project
 
  
